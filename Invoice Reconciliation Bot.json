@@ -1,0 +1,447 @@
+{
+  "name": "Invoice Reconciliation Bot",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "799d27fb-b561-4e35-838c-4e3d382d069d",
+      "name": "Run Reconciliation (Demo)",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -448,
+        176
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1NqlztWMVGAUsZSMezo_1weqsIh1I13c_sGWDthCe1BQ",
+          "mode": "list",
+          "cachedResultName": "Invoice Reconciliation Data",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1NqlztWMVGAUsZSMezo_1weqsIh1I13c_sGWDthCe1BQ/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Invoices",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1NqlztWMVGAUsZSMezo_1weqsIh1I13c_sGWDthCe1BQ/edit#gid=0"
+        },
+        "options": {}
+      },
+      "id": "3abbeed6-3c3c-4dda-98e9-c4a95b0af6ea",
+      "name": "Get Invoices",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -48,
+        304
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "Wx6Co6yVJBbC6jy2",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1NqlztWMVGAUsZSMezo_1weqsIh1I13c_sGWDthCe1BQ",
+          "mode": "list",
+          "cachedResultName": "Invoice Reconciliation Data",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1NqlztWMVGAUsZSMezo_1weqsIh1I13c_sGWDthCe1BQ/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1759347738,
+          "mode": "list",
+          "cachedResultName": "Payments",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1NqlztWMVGAUsZSMezo_1weqsIh1I13c_sGWDthCe1BQ/edit#gid=1759347738"
+        },
+        "options": {}
+      },
+      "id": "030d6144-1eab-485e-a52b-512842447f9d",
+      "name": "Get Payments",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        176,
+        304
+      ],
+      "executeOnce": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "Wx6Co6yVJBbC6jy2",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const invoices = $('Get Invoices').all().map(i => i.json);\nconst payments = $('Get Payments').all().map(i => i.json);\n\nconst normKey = (v) => String(v == null ? '' : v).toLowerCase().replace(/[^a-z0-9]/g, '');\nconst digitsOf = (v) => String(v == null ? '' : v).replace(/[^0-9]/g, '');\nconst toNum = (v) => {\n  const n = Number(String(v == null ? '0' : v).replace(/[^0-9.\\-]/g, ''));\n  return isNaN(n) ? 0 : n;\n};\nconst toDate = (v) => {\n  const d = new Date(String(v));\n  return isNaN(d.getTime()) ? null : d;\n};\n\nconst similarity = (a, b) => {\n  const s1 = normKey(a);\n  const s2 = normKey(b);\n  if (!s1.length && !s2.length) return 100;\n  if (!s1.length || !s2.length) return 0;\n  const dp = [];\n  for (let i = 0; i <= s1.length; i++) { dp.push([i]); }\n  for (let j = 1; j <= s2.length; j++) { dp[0][j] = j; }\n  for (let i = 1; i <= s1.length; i++) {\n    for (let j = 1; j <= s2.length; j++) {\n      dp[i][j] = s1[i - 1] === s2[j - 1]\n        ? dp[i - 1][j - 1]\n        : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);\n    }\n  }\n  const maxLen = Math.max(s1.length, s2.length);\n  return Math.round((1 - dp[s1.length][s2.length] / maxLen) * 100);\n};\n\nconst openInvoices = invoices.filter(inv => inv.invoice_id && normKey(inv.status) !== 'paid');\n\nconst scorePair = (pay, inv) => {\n  const reasons = [];\n  let score = 0;\n  const ref = normKey(pay.reference_text);\n  const id = normKey(inv.invoice_id);\n  const refDigits = digitsOf(pay.reference_text);\n  const idDigits = digitsOf(inv.invoice_id);\n  let idHit = false;\n\n  if (id && ref.indexOf(id) !== -1) {\n    score += 50; idHit = true; reasons.push('exact_invoice_id_in_reference');\n  } else if (idDigits.length >= 3 && refDigits.indexOf(idDigits) !== -1) {\n    score += 40; idHit = true; reasons.push('fuzzy_invoice_id_in_reference');\n  }\n\n  const payAmt = toNum(pay.amount);\n  const invAmt = toNum(inv.amount);\n  const variance = Math.round((payAmt - invAmt) * 100) / 100;\n  const withinTolerance = invAmt > 0 && Math.abs(variance) / invAmt <= 0.02;\n\n  if (invAmt > 0 && payAmt === invAmt) { score += 30; reasons.push('exact_amount'); }\n  else if (withinTolerance) { score += 20; reasons.push('amount_within_2pct_tolerance'); }\n\n  const nameScore = similarity(pay.sender_name, inv.customer_name);\n  if (nameScore >= 90) { score += 15; reasons.push('customer_name_match_' + nameScore); }\n  else if (nameScore >= 75) { score += 8; reasons.push('customer_name_partial_' + nameScore); }\n\n  const pd = toDate(pay.date);\n  const dd = toDate(inv.due_date);\n  if (pd && dd && Math.abs(pd.getTime() - dd.getTime()) / 86400000 <= 15) {\n    score += 5; reasons.push('within_due_date_window');\n  }\n\n  return { inv: inv, score: score, reasons: reasons, idHit: idHit, variance: variance, payAmt: payAmt, invAmt: invAmt, withinTolerance: withinTolerance, nameScore: nameScore };\n};\n\nconst claimedBy = {};\nconst results = [];\n\nfor (const pay of payments) {\n  if (!pay.transaction_id) { continue; }\n\n  const scored = openInvoices.map(inv => scorePair(pay, inv));\n  const idHits = scored.filter(s => s.idHit);\n  scored.sort((a, b) => b.score - a.score);\n  const best = scored.length ? scored[0] : null;\n\n  let status = 'Unmatched';\n  let matchedId = '';\n  let matchedCustomer = '';\n  let invoiceAmount = 0;\n  let variance = 0;\n  let score = best ? best.score : 0;\n  let reasons = ['no_candidate_above_threshold'];\n\n  if (idHits.length > 1) {\n    const combinedTotal = idHits.reduce((t, s) => t + s.invAmt, 0);\n    const ids = idHits.map(s => s.inv.invoice_id).join(' + ');\n    status = 'Needs Review';\n    matchedId = ids;\n    invoiceAmount = combinedTotal;\n    variance = Math.round((toNum(pay.amount) - combinedTotal) * 100) / 100;\n    reasons = ['multiple_invoice_ids_in_reference', 'combined_invoice_total_' + combinedTotal, variance === 0 ? 'combined_total_matches_payment' : 'combined_total_variance_' + variance];\n  } else if (best && best.score >= 50) {\n    const invId = best.inv.invoice_id;\n    matchedId = invId;\n    matchedCustomer = best.inv.customer_name;\n    invoiceAmount = best.invAmt;\n    variance = best.variance;\n    reasons = best.reasons.slice();\n\n    if (claimedBy[invId]) {\n      status = 'Duplicate';\n      reasons.push('invoice_already_settled_by_' + claimedBy[invId]);\n    } else if (best.idHit && !best.withinTolerance && best.payAmt < best.invAmt) {\n      status = 'Partial';\n      reasons.push('short_payment');\n      claimedBy[invId] = pay.transaction_id;\n    } else if (best.idHit && !best.withinTolerance && best.payAmt > best.invAmt) {\n      status = 'Overpaid';\n      reasons.push('excess_payment');\n      claimedBy[invId] = pay.transaction_id;\n    } else if (best.score >= 80) {\n      status = 'Matched';\n      claimedBy[invId] = pay.transaction_id;\n    } else {\n      status = 'Needs Review';\n      reasons.push('confidence_below_auto_post_threshold');\n    }\n  }\n\n  results.push({\n    json: {\n      transaction_id: pay.transaction_id,\n      payment_date: pay.date,\n      payment_amount: toNum(pay.amount),\n      reference_text: pay.reference_text,\n      sender_name: pay.sender_name,\n      matched_invoice_id: matchedId,\n      customer_name: matchedCustomer,\n      invoice_amount: invoiceAmount,\n      variance: variance,\n      match_score: score,\n      status: status,\n      auto_post: status === 'Matched',\n      match_reasons: reasons.join(' | '),\n      reconciled_at: new Date().toISOString()\n    }\n  });\n}\n\nreturn results;"
+      },
+      "id": "77a85731-4bf2-4108-916d-67dffcc3a47b",
+      "name": "Reconciliation Engine",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        496,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "is-clean-match",
+              "leftValue": "={{ $json.status }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
+              "rightValue": "Matched"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "4e7ae3b1-661f-4db0-a166-70133c2ee78c",
+      "name": "Auto-Post or Escalate?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        320,
+        688
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "1NqlztWMVGAUsZSMezo_1weqsIh1I13c_sGWDthCe1BQ",
+          "mode": "list",
+          "cachedResultName": "Invoice Reconciliation Data",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1NqlztWMVGAUsZSMezo_1weqsIh1I13c_sGWDthCe1BQ/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Invoices"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [
+            "invoice_id"
+          ],
+          "value": {
+            "invoice_id": "={{ $json.matched_invoice_id }}",
+            "status": "Paid"
+          },
+          "schema": [
+            {
+              "id": "invoice_id",
+              "displayName": "invoice_id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "d5303b6e-535b-4455-8f2b-e16d53a84915",
+      "name": "Mark Invoice as Paid",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        672,
+        560
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "Wx6Co6yVJBbC6jy2",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1NqlztWMVGAUsZSMezo_1weqsIh1I13c_sGWDthCe1BQ",
+          "mode": "list",
+          "cachedResultName": "Invoice Reconciliation Data",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1NqlztWMVGAUsZSMezo_1weqsIh1I13c_sGWDthCe1BQ/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1119379454,
+          "mode": "list",
+          "cachedResultName": "Exceptions",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1NqlztWMVGAUsZSMezo_1weqsIh1I13c_sGWDthCe1BQ/edit#gid=1119379454"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "36f97c3c-70cf-42f8-ab70-6e5c42ac45e7",
+      "name": "Add to Exception Queue",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        688,
+        896
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "Wx6Co6yVJBbC6jy2",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1NqlztWMVGAUsZSMezo_1weqsIh1I13c_sGWDthCe1BQ",
+          "mode": "list",
+          "cachedResultName": "Invoice Reconciliation Data",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1NqlztWMVGAUsZSMezo_1weqsIh1I13c_sGWDthCe1BQ/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 57755231,
+          "mode": "list",
+          "cachedResultName": "Audit_Log",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1NqlztWMVGAUsZSMezo_1weqsIh1I13c_sGWDthCe1BQ/edit#gid=57755231"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "4307723b-bc57-4d2b-8918-045a66212bee",
+      "name": "Write Audit Log",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1088,
+        128
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "Wx6Co6yVJBbC6jy2",
+          "name": "Google Sheets account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.all().map(i => i.json);\nconst total = rows.length;\nconst countOf = (s) => rows.filter(r => r.status === s).length;\n\nconst matched = countOf('Matched');\nconst partial = countOf('Partial');\nconst overpaid = countOf('Overpaid');\nconst duplicate = countOf('Duplicate');\nconst review = countOf('Needs Review');\nconst unmatched = countOf('Unmatched');\nconst exceptions = total - matched;\n\nconst autoMatchRate = total ? Math.round((matched / total) * 1000) / 10 : 0;\nconst exceptionRate = total ? Math.round((exceptions / total) * 1000) / 10 : 0;\n\nconst money = (n) => Number(n || 0).toLocaleString('en-US');\nconst reconciledAmount = rows.filter(r => r.status === 'Matched').reduce((t, r) => t + Number(r.payment_amount || 0), 0);\nconst flaggedAmount = rows.filter(r => r.status !== 'Matched').reduce((t, r) => t + Number(r.payment_amount || 0), 0);\nconst totalVariance = rows.reduce((t, r) => t + Number(r.variance || 0), 0);\n\nconst exceptionRows = rows.filter(r => r.status !== 'Matched');\nlet tableRows = '';\nfor (const r of exceptionRows) {\n  tableRows += '<tr>'\n    + '<td style=\"padding:6px 10px;border-bottom:1px solid #eee;\">' + r.transaction_id + '</td>'\n    + '<td style=\"padding:6px 10px;border-bottom:1px solid #eee;\">' + (r.matched_invoice_id || '-') + '</td>'\n    + '<td style=\"padding:6px 10px;border-bottom:1px solid #eee;text-align:right;\">' + money(r.payment_amount) + '</td>'\n    + '<td style=\"padding:6px 10px;border-bottom:1px solid #eee;text-align:right;\">' + money(r.variance) + '</td>'\n    + '<td style=\"padding:6px 10px;border-bottom:1px solid #eee;text-align:center;\">' + r.match_score + '</td>'\n    + '<td style=\"padding:6px 10px;border-bottom:1px solid #eee;\"><b>' + r.status + '</b></td>'\n    + '</tr>';\n}\nif (!tableRows) {\n  tableRows = '<tr><td colspan=\"6\" style=\"padding:10px;\">No exceptions in this run.</td></tr>';\n}\n\nconst statLine = (label, value) => '<tr><td style=\"padding:4px 10px;\">' + label + '</td><td style=\"padding:4px 10px;text-align:right;\"><b>' + value + '</b></td></tr>';\n\nconst html = '<div style=\"font-family:Arial,Helvetica,sans-serif;color:#222;max-width:760px;\">'\n  + '<h2 style=\"margin:0 0 4px 0;\">Invoice Reconciliation Summary</h2>'\n  + '<p style=\"margin:0 0 16px 0;color:#666;font-size:13px;\">Run completed ' + new Date().toISOString().slice(0, 16).replace('T', ' ') + ' UTC</p>'\n  + '<table style=\"border-collapse:collapse;font-size:14px;margin-bottom:20px;\">'\n  + statLine('Transactions processed', total)\n  + statLine('Auto-matched', matched + ' (' + autoMatchRate + '%)')\n  + statLine('Sent to exception queue', exceptions + ' (' + exceptionRate + '%)')\n  + statLine('Partial payments', partial)\n  + statLine('Overpayments', overpaid)\n  + statLine('Duplicate payments blocked', duplicate)\n  + statLine('Low-confidence / needs review', review)\n  + statLine('Unidentified transactions', unmatched)\n  + statLine('Amount reconciled', money(reconciledAmount))\n  + statLine('Amount held for review', money(flaggedAmount))\n  + statLine('Net variance', money(totalVariance))\n  + '</table>'\n  + '<h3 style=\"margin:0 0 8px 0;\">Exception queue</h3>'\n  + '<table style=\"border-collapse:collapse;font-size:13px;width:100%;\">'\n  + '<tr style=\"background:#f2f4f7;text-align:left;\">'\n  + '<th style=\"padding:8px 10px;\">Transaction</th><th style=\"padding:8px 10px;\">Invoice</th>'\n  + '<th style=\"padding:8px 10px;text-align:right;\">Paid</th><th style=\"padding:8px 10px;text-align:right;\">Variance</th>'\n  + '<th style=\"padding:8px 10px;text-align:center;\">Score</th><th style=\"padding:8px 10px;\">Status</th></tr>'\n  + tableRows\n  + '</table>'\n  + '<p style=\"margin-top:18px;color:#666;font-size:12px;\">Only exact, high-confidence matches are posted automatically. Everything else is held for human review rather than silently reconciled.</p>'\n  + '</div>';\n\nreturn [{\n  json: {\n    total_transactions: total,\n    auto_matched: matched,\n    exceptions: exceptions,\n    auto_match_rate: autoMatchRate,\n    exception_rate: exceptionRate,\n    partial_payments: partial,\n    overpayments: overpaid,\n    duplicates_blocked: duplicate,\n    needs_review: review,\n    unmatched: unmatched,\n    amount_reconciled: reconciledAmount,\n    amount_held: flaggedAmount,\n    net_variance: totalVariance,\n    email_subject: 'Reconciliation Summary - ' + matched + '/' + total + ' auto-matched, ' + exceptions + ' exceptions',\n    html_report: html\n  }\n}];"
+      },
+      "id": "1b9af7bd-6dbb-415f-a5d8-c08875a289cc",
+      "name": "Build Summary Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1184,
+        448
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "towfiksikder78205@gmail.com",
+        "subject": "={{ $json.email_subject }}",
+        "message": "={{ $json.html_report }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "87557547-f2d0-4714-9ad5-6d49169ca9ee",
+      "name": "Email Summary Report",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1520,
+        448
+      ],
+      "webhookId": "046e845f-6eff-44e9-b2a1-e2b7aaab2a02",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "aphXUn5iu0liWFit",
+          "name": "Gmail account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 9
+            }
+          ]
+        }
+      },
+      "id": "ef45943a-c3fd-4248-8d1f-47727ea51fbf",
+      "name": "Daily Auto Run 9AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        -448,
+        496
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Run Reconciliation (Demo)": {
+      "main": [
+        [
+          {
+            "node": "Get Invoices",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Invoices": {
+      "main": [
+        [
+          {
+            "node": "Get Payments",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Payments": {
+      "main": [
+        [
+          {
+            "node": "Reconciliation Engine",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reconciliation Engine": {
+      "main": [
+        [
+          {
+            "node": "Auto-Post or Escalate?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Write Audit Log",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Build Summary Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auto-Post or Escalate?": {
+      "main": [
+        [
+          {
+            "node": "Mark Invoice as Paid",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Add to Exception Queue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Summary Report": {
+      "main": [
+        [
+          {
+            "node": "Email Summary Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Daily Auto Run 9AM": {
+      "main": [
+        [
+          {
+            "node": "Get Invoices",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": true
+  },
+  "versionId": "a8971a36-d066-4f9e-bf1a-a28fcddc0387",
+  "meta": {
+    "aiBuilderAssisted": true,
+    "builderVariant": "mcp",
+    "templateCredsSetupCompleted": true,
+    "instanceId": "9afcc4d6c48a820d51f10ba271e952d1c8f8584daabe8bdeebdafc5ae28808a2"
+  },
+  "nodeGroups": [],
+  "id": "BhsP3q4zH2s620ui",
+  "tags": []
+}
