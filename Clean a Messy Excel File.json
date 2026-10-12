@@ -1,0 +1,191 @@
+{
+  "name": "Clean a Messy Excel File",
+  "nodes": [
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "1SBVBZ_Rc2RXJI8T1Z1P4-HmKDCTZmfNs",
+          "mode": "list",
+          "cachedResultName": "Assignment-3.xlsx",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1SBVBZ_Rc2RXJI8T1Z1P4-HmKDCTZmfNs/edit?usp=drivesdk&ouid=105273658873881431356&rtpof=true&sd=true"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        -80,
+        -80
+      ],
+      "id": "cd84444f-8bf0-466f-b40c-0b89c4bc19be",
+      "name": "Download file",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "xbEUra7l86Yf3coa",
+          "name": "Google Drive OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "xlsx",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        176,
+        -208
+      ],
+      "id": "b940ffdf-a421-4faa-bf67-967fcab3c797",
+      "name": "Extract from File"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nlet cleanedData = [];\nlet uniqueKeys = new Set();\n\nlet totalRowsImported = items.length;\nlet rowsRemovedEmptyInvalid = 0;\nlet duplicateRowsRemoved = 0;\nlet invalidEmailsRemoved = 0;\nlet invalidPhonesRemoved = 0;\n\nlet customerCounter = 1;\n\nfor (let item of items) {\n    let json = item.json;\n\n    if (!json[\"Full Name\"] && !json[\"Email\"] && !json[\"Phone\"]) {\n        rowsRemovedEmptyInvalid++;\n        continue;\n    }\n\n    let name = json[\"Full Name\"] ? json[\"Full Name\"].toString().replace(/\\s+/g, ' ').trim() : '';\n    let email = json[\"Email\"] ? json[\"Email\"].toString().trim().toLowerCase() : ''; // Case-insensitive checking\n    let phone = json[\"Phone\"] ? json[\"Phone\"].toString().trim() : '';\n    let city = json[\"City\"] ? json[\"City\"].toString().replace(/\\s+/g, ' ').trim() : '';\n    let regDate = json[\"Registration Date\"] ? json[\"Registration Date\"].toString().trim() : '';\n\n    if (!name || !email || !phone) {\n        rowsRemovedEmptyInvalid++;\n        continue;\n    }\n\n    name = name.toLowerCase().replace(/\\b\\w/g, c => c.toUpperCase());\n    city = city.toLowerCase().replace(/\\b\\w/g, c => c.toUpperCase());\n\n    // Strict Email Validation to allow ONLY valid user@gmail.com formats\n    const gmailRegex = /^[a-zA-Z0-9._%+-]+@gmail\\.com$/;\n    if (!gmailRegex.test(email)) {\n        invalidEmailsRemoved++;\n        continue; \n    }\n\n    let cleanPhone = phone.replace(/\\D/g, ''); \n    if (cleanPhone.length === 10 && cleanPhone.startsWith('1')) {\n        cleanPhone = '0' + cleanPhone;\n    }\n    \n    if (!(cleanPhone.length === 11 && cleanPhone.startsWith('01'))) {\n        invalidPhonesRemoved++;\n        continue; \n    }\n\n    let formattedDate = regDate;\n    try {\n        if (!isNaN(regDate) && Number(regDate) > 30000) {\n            let excelEpoch = new Date(1899, 11, 30);\n            let parsedDate = new Date(excelEpoch.getTime() + Number(regDate) * 24 * 60 * 60 * 1000);\n            let year = parsedDate.getFullYear();\n            let month = String(parsedDate.getMonth() + 1).padStart(2, '0');\n            let day = String(parsedDate.getDate()).padStart(2, '0');\n            formattedDate = `${year}-${month}-${day}`;\n        } else {\n            let parsedDate = new Date(regDate);\n            if (!isNaN(parsedDate.getTime())) {\n                let year = parsedDate.getFullYear();\n                let month = String(parsedDate.getMonth() + 1).padStart(2, '0');\n                let day = String(parsedDate.getDate()).padStart(2, '0');\n                formattedDate = `${year}-${month}-${day}`;\n            } else {\n                formattedDate = new Date(Date.parse(regDate)).toISOString().split('T')[0];\n            }\n        }\n    } catch (e) {\n        formattedDate = \"Invalid Date\";\n    }\n\n    let duplicateKeyEmail = `email:${email}`;\n    let duplicateKeyPhone = `phone:${cleanPhone}`;\n\n    if (uniqueKeys.has(duplicateKeyEmail) || uniqueKeys.has(duplicateKeyPhone)) {\n        duplicateRowsRemoved++;\n        continue; \n    }\n    uniqueKeys.add(duplicateKeyEmail);\n    uniqueKeys.add(duplicateKeyPhone);\n\n    let customerId = `CUST-${String(customerCounter).padStart(4, '0')}`;\n    customerCounter++;\n\n    cleanedData.push({\n        json: {\n            \"Customer ID\": customerId,\n            \"Full Name\": name,\n            \"Email\": email,\n            \"Phone\": cleanPhone,\n            \"City\": city,\n            \"Registration Date\": formattedDate\n        }\n    });\n}\n\nconsole.log(\"--- SUMMARY REPORT ---\");\nconsole.log(\"Total Rows Imported:\", totalRowsImported);\nconsole.log(\"Empty/Missing Rows Removed:\", rowsRemovedEmptyInvalid);\nconsole.log(\"Duplicate Rows Removed:\", duplicateRowsRemoved);\nconsole.log(\"Invalid Emails Removed:\", invalidEmailsRemoved);\nconsole.log(\"Invalid Phones Removed:\", invalidPhonesRemoved);\nconsole.log(\"Final Row Count:\", cleanedData.length);\n\nreturn cleanedData;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        400,
+        -48
+      ],
+      "id": "c4f13518-7b97-43b5-a42d-70d987aa3cbe",
+      "name": "Code in JavaScript",
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {
+        "operation": "xlsx",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        608,
+        -192
+      ],
+      "id": "fa912c08-5dcd-4fb9-81c8-211469645377",
+      "name": "Convert to File"
+    },
+    {
+      "parameters": {
+        "name": "clean_customers.xlsx.",
+        "driveId": {
+          "__rl": true,
+          "value": "My Drive",
+          "mode": "list",
+          "cachedResultName": "My Drive",
+          "cachedResultUrl": "https://drive.google.com/drive/my-drive"
+        },
+        "folderId": {
+          "__rl": true,
+          "value": "1_oeYjbQ1XCV9CRMA9FD3nqz40zaTuXwQ",
+          "mode": "list",
+          "cachedResultName": "AI Automation",
+          "cachedResultUrl": "https://drive.google.com/drive/folders/1_oeYjbQ1XCV9CRMA9FD3nqz40zaTuXwQ"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        848,
+        -64
+      ],
+      "id": "37201dd0-32a9-4d0b-8b9e-b132e230b409",
+      "name": "Upload file",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "xbEUra7l86Yf3coa",
+          "name": "Google Drive OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -304,
+        -208
+      ],
+      "id": "92b59e27-b32f-4593-97f6-516c285f2f3a",
+      "name": "When clicking ‘Execute workflow’"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Download file": {
+      "main": [
+        [
+          {
+            "node": "Extract from File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from File": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Convert to File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert to File": {
+      "main": [
+        [
+          {
+            "node": "Upload file",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Download file",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "1dcd95b1-fd98-466c-8ce8-91c7ad572d83",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "2cac36e7f9d0379ad76e8ee3f71ff5529b7baca6d0abb19fa2b4b98b22b38305"
+  },
+  "nodeGroups": [],
+  "id": "crrqPFZmxtCTV293",
+  "tags": []
+}
