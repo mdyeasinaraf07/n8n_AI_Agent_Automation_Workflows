@@ -1,5 +1,5 @@
 {
-  "name": Build a LinkedIn Job Alert Automation with n8n",
+  "name": "Build a LinkedIn Job Alert Automation with n8n",
   "nodes": [
     {
       "parameters": {
