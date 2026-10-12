@@ -1,0 +1,394 @@
+{
+  "name": "Assignment: Build a LinkedIn Job Alert Automation with n8n",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "cf289d19-40fb-4647-b6b9-e46188bb0d67",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -384,
+        -48
+      ],
+      "id": "2291c1ea-eded-4eef-9d82-6ab781225d69",
+      "name": "Webhook",
+      "webhookId": "cf289d19-40fb-4647-b6b9-e46188bb0d67"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.apify.com/v2/acts/curious_coder~linkedin-jobs-scraper/runs?token=apify_api_cI2jEjdy0UXV9GHRmwG3CJy3mQINFJ01lF2Z",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"count\": {{ $json.body.limit }},\n  \"scrapeCompany\": true,\n  \"splitByLocation\": false,\n  \"urls\": [\n    \"https://www.linkedin.com/jobs/search/?keywords={{ encodeURIComponent($json.jobTitle) }}&location={{ encodeURIComponent($json.location) }}\"\n  ]\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -128,
+        -48
+      ],
+      "id": "f78a909b-eec3-410b-9f4a-773315ffdf66",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.apify.com/v2/actor-runs/{{ $json.data.id }}?token=apify_api_cI2jEjdy0UXV9GHRmwG3CJy3mQINFJ01lF2Z",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        128,
+        -48
+      ],
+      "id": "eaa26a9d-82f1-48b7-806b-aa3c89b3a380",
+      "name": "Check Status"
+    },
+    {
+      "parameters": {
+        "amount": 30
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        192,
+        192
+      ],
+      "id": "4e5232c4-c8ef-4e0e-9df0-888531c2a05c",
+      "name": "Wait",
+      "webhookId": "f8fb5515-cd74-4c90-827e-064cf0c880f1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "478468b5-3cb7-4ad2-8a80-82539c48e79e",
+              "leftValue": "={{ $json.data.status }}",
+              "rightValue": "SUCCEEDED",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        352,
+        -48
+      ],
+      "id": "ed9f2c55-4bf1-4072-abb3-6e28c8de90c1",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.apify.com/v2/actor-runs/{{ $node[\"Check Status\"].json.data.id }}/dataset/items?token=apify_api_cI2jEjdy0UXV9GHRmwG3CJy3mQINFJ01lF2Z",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        592,
+        -64
+      ],
+      "id": "3c700e96-da79-4d54-8632-b096b27746ed",
+      "name": "HTTP Request1"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1qGL2L7OW3EAiI9LbthQMsAvV71hx2UzIQ_j409ORTQo",
+          "mode": "list",
+          "cachedResultName": " LinkedIn Job data",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1qGL2L7OW3EAiI9LbthQMsAvV71hx2UzIQ_j409ORTQo/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1qGL2L7OW3EAiI9LbthQMsAvV71hx2UzIQ_j409ORTQo/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Job Title": "={{ $json.title }}",
+            "Company Name": "={{ $json.companyName }}",
+            "Location": "={{ $json.location }}",
+            "Posted Time": "={{ $json.postedAt }}",
+            "Company URL": "={{ $json.companyLinkedinUrl }}",
+            "Job URL": "={{ $json.link }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Job Title",
+              "displayName": "Job Title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Company Name",
+              "displayName": "Company Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Location",
+              "displayName": "Location",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Posted Time",
+              "displayName": "Posted Time",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Job URL",
+              "displayName": "Job URL",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Company URL",
+              "displayName": "Company URL",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        832,
+        -64
+      ],
+      "id": "7470a36c-5c4a-46e2-8e7d-4f4a2ccbc56c",
+      "name": "Append row in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "7GhoRof7MBgFLreJ",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are an expert recruitment data analyst. Analyze the following LinkedIn job postings data that we just scraped:\n\n=== SCRAPED DATA ===\n{{ $input.all().map(item => `Title: ${item.json[\"Job Title\"]} | Company: ${item.json[\"Company Name\"]} | Location: ${item.json[\"Location\"]}`).join('\\n') }}\n====================\n\nYour task is to generate a concise, highly professional 2–3 sentence summary based ONLY on the data provided above. \n\nStrictly highlight the following three points within those sentences:\n1. The most common hiring companies.\n2. The most common locations.\n3. Any noticeable hiring trends.\n\nConstraints:\n- Keep it strictly within 2–3 sentences.\n- Do not invent any outside facts or assume trends not visible in the provided data.",
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        1056,
+        -64
+      ],
+      "id": "c29e8b83-df4c-480e-83c9-4e96ad411862",
+      "name": "Basic LLM Chain",
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "model": "llama-3.3-70b-versatile",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        992,
+        240
+      ],
+      "id": "408526b9-1be6-406e-9638-332e017f2613",
+      "name": "Groq Chat Model",
+      "credentials": {
+        "groqApi": {
+          "id": "Z9wZyPZwChILA3Ii",
+          "name": "Groq account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.text }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1408,
+        -64
+      ],
+      "id": "2932302e-2cd8-4cb0-a30e-6f5e7bdd5ad3",
+      "name": "Respond to Webhook"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Check Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Status": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Check Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request1": {
+      "main": [
+        [
+          {
+            "node": "Append row in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append row in sheet": {
+      "main": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Basic LLM Chain": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "fd1708b9-3243-4403-9f3e-46b862189df7",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "94c5839337aca4fb9dd4dfb645952a031ef78e68b99a7fe5ce93cfb434598b97"
+  },
+  "nodeGroups": [],
+  "id": "oIqonfHD3W2Fjy3w",
+  "tags": []
+}
