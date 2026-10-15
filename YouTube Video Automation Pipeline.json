@@ -1,0 +1,546 @@
+{
+  "name": "youyube automation",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -128
+      ],
+      "id": "c778e4e6-5c91-496f-8946-33b4f3812acb",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-goog-api-key"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"contents\": [\n    {\n      \"parts\": [\n        {\n          \"text\": {{ JSON.stringify(\n            \"Convert the following YouTube script into exactly 6 visual scenes.\\n\\n\" +\n            \"Return ONLY valid JSON. No markdown. No explanation.\\n\\n\" +\n            \"Format:\\n\" +\n            \"[{\\\"keyword\\\":\\\"space galaxy\\\",\\\"description\\\":\\\"Beautiful galaxy in deep space\\\"}]\\n\\n\" +\n            \"SCRIPT:\\n\" +\n            $json.output\n          ) }}\n        }\n      ]\n    }\n  ],\n  \"generationConfig\": {\n    \"temperature\": 0.5,\n    \"maxOutputTokens\": 1500,\n    \"thinkingConfig\": {\n      \"thinkingBudget\": 0\n    }\n  }\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        576,
+        -128
+      ],
+      "id": "e1ec3c33-d8fa-46a7-981c-198c8d63c5df",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "jsCode": "const text = $json.candidates[0].content.parts[0].text;\n\n// Remove markdown code fences if Gemini adds them\nconst cleanText = text\n  .replace(/^```json\\s*/i, \"\")\n  .replace(/^```\\s*/i, \"\")\n  .replace(/\\s*```$/i, \"\")\n  .trim();\n\nlet scenes;\n\ntry {\n  scenes = JSON.parse(cleanText);\n} catch (error) {\n  throw new Error(\n    \"AI returned invalid JSON.\\n\\nAI Output:\\n\" + text\n  );\n}\n\nif (!Array.isArray(scenes)) {\n  throw new Error(\"AI output is not an array.\");\n}\n\nreturn scenes.map((scene, index) => ({\n  json: {\n    scene: index + 1,\n    keyword: scene.keyword,\n    description: scene.description\n  }\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        800,
+        -128
+      ],
+      "id": "2c895714-158a-4ee3-9ff3-c4f229bd2ef5",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "url": "https://pixabay.com/api/",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "key"
+            },
+            {
+              "name": "q",
+              "value": "= {{ $json.output }}"
+            },
+            {
+              "name": "image_type",
+              "value": "photo"
+            },
+            {
+              "name": "orientation",
+              "value": "horizontal"
+            },
+            {
+              "name": "per_page",
+              "value": "3"
+            },
+            {
+              "name": "safesearch",
+              "value": "true"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1600,
+        -128
+      ],
+      "id": "fcb96879-de66-4304-ab44-5da069202b29",
+      "name": "HTTP Request1"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.hits[0].largeImageURL }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1824,
+        -48
+      ],
+      "id": "c816600a-ea66-4dd4-b2a6-db3fe043d646",
+      "name": "HTTP Request2"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nconst imageUrls = [];\n\nfor (const item of items) {\n  const hits = item.json?.hits;\n\n  if (!Array.isArray(hits)) continue;\n\n  for (const hit of hits) {\n    const url = hit.largeImageURL || hit.webformatURL;\n\n    if (url && !imageUrls.includes(url)) {\n      imageUrls.push(url);\n    }\n  }\n}\n\nif (imageUrls.length < 6) {\n  throw new Error(\n    `Only ${imageUrls.length} images found. Need 6 images.`\n  );\n}\n\nlet script = $(\"AI Agent\").first().json.output;\n\nif (typeof script !== \"string\" || !script.trim()) {\n  throw new Error(\"AI Agent script is empty.\");\n}\n\nscript = script\n  .replace(/^```(?:text|json)?\\s*/i, \"\")\n  .replace(/\\s*```$/i, \"\")\n  .trim();\n\n// Exactly 6 image scenes\nconst scenes = imageUrls.slice(0, 6).map((url) => ({\n  duration: 3.333,\n  elements: [\n    {\n      type: \"image\",\n      src: url,\n      fit: \"cover\"\n    }\n  ]\n}));\n\nreturn [\n  {\n    json: {\n      scenes,\n      voice_text: script\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1600,
+        -320
+      ],
+      "id": "e688ac84-1645-4af0-899e-ceea4f67515d",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "resource": "video",
+        "operation": "upload",
+        "title": "=={{ $(\"AI Agent\").first().json.output }}",
+        "regionCode": "BD",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.youTube",
+      "typeVersion": 1,
+      "position": [
+        2944,
+        -320
+      ],
+      "id": "2472a50a-227e-4c58-b1bf-25f36de740be",
+      "name": "Upload a video",
+      "credentials": {
+        "youTubeOAuth2Api": {
+          "id": "o8jcuAFj9iz6xAT4",
+          "name": "YouTube account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "You are a professional YouTube script writer.\n\nWrite a short narration script for a YouTube video about:\n\n10 Amazing Facts About Space\n\nRequirements:\n- Language: English\n- Length: approximately 45 to 50 words\n- Suitable for about 20 seconds of narration\n- Start with an interesting hook\n- Include several amazing space facts\n- Use simple, natural spoken English\n- End with a short call to action\n- No emojis\n- No markdown\n- No bullet points\n- No numbering\n- No scene directions\n- No JSON\n- No array\n- No quotation marks\n\nIMPORTANT:\nReturn ONLY the narration text.\nDo not return anything before or after the narration.\n\nExample style:\nDid you know space is stranger than you think? Venus has a day longer than its year, neutron stars are incredibly dense, and billions of stars fill our galaxy. These cosmic facts show just how amazing our universe really is. Follow for more fascinating facts about space.",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        224,
+        -128
+      ],
+      "id": "0d8c17a9-5d8d-4627-bc6c-d1a5a3a59e46",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "model": "openai/gpt-oss-20b",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        304,
+        96
+      ],
+      "id": "9a1325f3-e8a1-464b-b32c-94d648ffc724",
+      "name": "Groq Chat Model",
+      "credentials": {
+        "groqApi": {
+          "id": "pJvt7LDgodwxkRzz",
+          "name": "Groq account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are a stock footage/image search keyword optimizer.\n\nYour job is to create ONE short Pixabay search keyword from the given scene.\n\nRules:\n- English only\n- 2 to 4 words\n- Focus on the main visual subject\n- Make it suitable for Pixabay photo search\n- Do not use abstract words\n- Do not explain anything\n- Return ONLY the keyword\n\nScene:\n{{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        1024,
+        -128
+      ],
+      "id": "ff9cc4ef-e9cd-4497-8a30-847779727c14",
+      "name": "AI Agent1"
+    },
+    {
+      "parameters": {
+        "model": "openai/gpt-oss-20b",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        1104,
+        96
+      ],
+      "id": "d204b821-b313-4a38-b067-21f1974f7310",
+      "name": "Groq Chat Model1",
+      "credentials": {
+        "groqApi": {
+          "id": "pJvt7LDgodwxkRzz",
+          "name": "Groq account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        1376,
+        -128
+      ],
+      "id": "3a90a241-5198-4a36-9d35-e79910ca5cbf",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.json2video.com/v2/movies",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{\n  {\n    scenes: $json.scenes,\n    elements: [\n      {\n        type: \"voice\",\n        text: $json.voice_text,\n        voice: \"en-US-AndrewMultilingualNeural\",\n        model: \"azure\",\n        start: 0\n      }\n    ]\n  }\n}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1824,
+        -320
+      ],
+      "id": "b30e87e6-af63-4312-9ac1-60939876420f",
+      "name": "HTTP Request3"
+    },
+    {
+      "parameters": {
+        "url": "https://api.json2video.com/v2/movies",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "project",
+              "value": "={{ $json.project }}"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        2272,
+        -320
+      ],
+      "id": "7bc7e1f1-4869-40b1-8d45-aaea204b28ff",
+      "name": "HTTP Request4"
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\n\nif (!data.movie?.url) {\n  throw new Error(\"Video URL not found\");\n}\n\nreturn [\n  {\n    json: {\n      video_url: data.movie.url,\n      thumbnail_url: data.movie.thumbnail,\n      project_id: data.movie.project,\n      duration: data.movie.duration\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2496,
+        -320
+      ],
+      "id": "22fefc39-4322-446b-b0c8-fbd46fba68ff",
+      "name": "Get Video URL",
+      "retryOnFail": false,
+      "waitBetweenTries": 1
+    },
+    {
+      "parameters": {
+        "amount": 30
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        2048,
+        -320
+      ],
+      "id": "3884b51d-e2b1-4712-9ef8-9f43544dbe1e",
+      "name": "Wait",
+      "webhookId": "a6eb2267-7346-4b1c-9080-c4b421148b1e"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.video_url }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        2720,
+        -320
+      ],
+      "id": "cee7e3e9-954d-4fd1-80b7-f91e9b4dc366",
+      "name": "HTTP Request5"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request1": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request2": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent1": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "HTTP Request1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request3": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request4": {
+      "main": [
+        [
+          {
+            "node": "Get Video URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Video URL": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request5": {
+      "main": [
+        [
+          {
+            "node": "Upload a video",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "7d9b5452-7aea-43ab-88f7-995f64ffdb09",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "812789840dde5cc4eb57211700f680b778b5567eb75564b0fb1b2e80b538810c"
+  },
+  "nodeGroups": [],
+  "id": "XaJv6ZHuKJJBAaNx",
+  "tags": []
+}
